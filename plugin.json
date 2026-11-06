@@ -2,7 +2,7 @@
   "name": "notebook-sync-scope",
   "author": "370958248",
   "url": "https://github.com/370958248/notebook-sync-scope",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "minAppVersion": "3.8.9",
   "backends": [
     "windows",
@@ -19,8 +19,8 @@
     "zh-CN": "指定同步范围"
   },
   "description": {
-    "default": "按笔记本排除本设备的后续同步及数据快照，支持规则预览、备份与撤回。",
-    "zh-CN": "按笔记本排除本设备的后续同步及数据快照，支持规则预览、备份与撤回。"
+    "default": "按笔记本或文档目录排除本设备后续同步，支持确定排除、重置、取消和明确的保存状态。",
+    "zh-CN": "按笔记本或文档目录排除本设备后续同步，支持确定排除、重置、取消和明确的保存状态。"
   },
   "readme": {
     "default": "README.md",
@@ -35,6 +35,8 @@
     "排除同步",
     "本地保留",
     "sync",
-    "syncignore"
+    "syncignore",
+    "文档目录",
+    "子文档"
   ]
 }

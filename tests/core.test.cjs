@@ -1,6 +1,48 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),C=require('../plugin/core.js'),IO=require('../plugin/io.js');
 const A='20000101000000-firstbk',B='20000101000001-secondb';
+const D='20000101000002-foldera',E='20000101000003-nesteda',F='20000101000004-folderb';
+test('document scope includes its file and descendant directory but no sibling or ancestor',()=>{
+ const key=A+'/'+D+'/'+E,text=C.render('assets/manual.pdf\n',[key]);assert.deepEqual(C.parse(text).ids,[key]);
+ assert.ok(text.includes('/'+key+'/\n/'+key+'.sy'));assert.ok(!text.includes('/'+A+'/\n'));assert.equal(C.render(text,[]),'assets/manual.pdf\n');
+ assert.equal(C.contains(A+'/'+D,key),true);assert.equal(C.contains(A+'/'+D,A+'/'+F),false);
+});
+test('deduplicates overlapping notebook and nested document exclusions',()=>{
+ assert.deepEqual(C.scopes([A+'/'+D+'/'+E,A+'/'+D,B+'/'+F,A+'/'+D]),[A+'/'+D,B+'/'+F]);
+ assert.deepEqual(C.scopes([A+'/'+D,A,A+'/'+D+'/'+E]),[A]);
+});
+test('whole notebook to one folder migration preserves manual rules and describes both changes',()=>{
+ const before=C.render('!assets/keep.pdf\r\n',[A]),plan=C.preview(before,[A+'/'+D]);
+ assert.deepEqual(plan.added,[A+'/'+D]);assert.deepEqual(plan.removed,[A]);assert.ok(plan.after.startsWith('!assets/keep.pdf\r\n'));
+ assert.deepEqual(C.parse(plan.after).ids,[A+'/'+D]);assert.equal(C.preview(before,[A]).after,before);
+});
+test('rejects unsafe document scopes and partially paired nested rules',()=>{
+ for(const key of [A+'//'+D,A+'/../'+D,A+'/assets',A+'/'+D+'.sy',A+'/'+D+'\n/assets/',A+'/'+D+'/',A+'\\'+D])assert.throws(()=>C.render('',[key]));
+ assert.throws(()=>C.parse(C.BEGIN+'\n/'+A+'/'+D+'/\n'+C.END));
+ assert.throws(()=>C.fromPath(A,'/'+D+'/../'+E+'.sy'));assert.equal(C.fromPath(A,'/'+D+'/'+E+'.sy'),A+'/'+D+'/'+E);
+});
+test('folder backups can be read and restored alongside legacy notebook backups',async()=>{
+ const record={version:1,at:'now',before:C.render('',[A]),after:C.render('',[A+'/'+D])};
+ const io=IO.create(async()=>new Response(JSON.stringify([record]),{headers:{'content-type':'text/plain'}}));assert.deepEqual(await io.history(),[record]);
+});
+test('directory adapter asks for all direct children including hidden documents and validates ancestry',async()=>{
+ const calls=[];let files=[{id:D,path:'/'+D+'.sy',name:'资料目录.sy',subFileCount:2}];
+ const io=IO.create(async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return Response.json({code:0,data:{files}});});
+ const result=await io.children(A);assert.equal(result[0].key,A+'/'+D);assert.equal(result[0].name,'资料目录');assert.equal(result[0].childCount,2);
+ assert.equal(calls[0].body.maxListCount,0);assert.equal(calls[0].body.showHidden,true);assert.equal(calls[0].body.path,'/');
+ files=[{id:E,path:'/'+D+'/'+E+'.sy',name:'下级'}];await io.children(A+'/'+D);assert.equal(calls[1].body.path,'/'+D+'.sy');
+ await assert.rejects(io.children(A),/路径不一致/);await assert.rejects(io.children(A+'/../assets'),/路径无效/);
+});
+test('new folder selection checks current document location before backup and writing',async()=>{
+ let data='',calls=[];const manager=new C.Manager({read:async()=>data,validateScopes:async keys=>{assert.deepEqual(keys,[A+'/'+D]);calls.push('validate');},backup:async()=>calls.push('backup'),write:async text=>{data=text;calls.push('write');}});
+ await manager.apply(C.preview('',[A+'/'+D]));assert.deepEqual(calls,['validate','backup','write']);
+});
+test('moved documents stop application before backup; paths are resolved without reading bodies',async()=>{
+ const calls=[];let moved=true;const adapter=IO.create(async(url,options)=>{calls.push(url);return Response.json({code:0,data:{notebook:A,path:'/'+(moved?F:D)+'.sy'}});});
+ await assert.rejects(adapter.validateScopes([A+'/'+D]),/位置已变化/);assert.deepEqual(calls,['/api/filetree/getPathByID']);moved=false;await adapter.validateScopes([A+'/'+D]);
+ let writes=0,backups=0;const manager=new C.Manager({read:async()=>'',validateScopes:async()=>{throw Error('moved');},backup:async()=>backups++,write:async()=>writes++});
+ await assert.rejects(manager.apply(C.preview('',[A+'/'+D])),/moved/);assert.equal(backups,0);assert.equal(writes,0);
+});
 test('rejects an oversized generated rule before backup or write',()=>{assert.throws(()=>C.preview('x'.repeat(C.MAX-1)+'\n',[A]),/规则过大/);});
 test('bundled plugin runs with only the official SiYuan require, including browser hosts',async()=>{const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');class Plugin{addCommand(){}addIcons(){}}const ctx={module:{exports:{}},require:key=>{assert.equal(key,'siyuan');return {Plugin,Dialog:class{}};},fetch(){}};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../index.js'),'utf8'),ctx);const instance=new ctx.module.exports();await instance.onload();assert.ok(instance.io);});
 test('excludes a whole notebook and its root descriptor, never shared assets',()=>{const text=C.render('',[A]);assert.deepEqual(C.parse(text).ids,[A]);assert.ok(text.includes('/'+A+'/\n/'+A+'.sy'));assert.ok(!text.includes('assets'));});
